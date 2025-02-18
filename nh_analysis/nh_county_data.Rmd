@@ -1,0 +1,141 @@
+---
+title: "USA county-level shapefiles & data"
+output: html_document
+date: "2024-11-29"
+---
+
+```{r pkgs, echo=FALSE,message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidycensus)
+library(geoarrow)
+library(arrow)
+library(sf)
+library(tigris)
+```
+
+
+## Obtaining data from Census
+
+```{r fips-state, eval=FALSE, tidy = 'formatR'}
+
+Sys.getenv('CENSUS_API_KEY')
+data("fips_codes")
+drop_states<-c("02", "15","78","74","72","69","66","60")
+us_st_fips <- fips_codes |> dplyr::filter(!(state_code %in% drop_states)) |> select(state_code) |> unique()
+us_st_fips <- us_st_fips$state_code
+rm(fips_codes)
+```
+
+
+```{r census-var-list, eval=FALSE}
+# collect variable names from Census 2020 5-year estimates
+acs5_2020 <- load_variables(2020, "acs5", cache = TRUE)
+acs5_2020_tract <- acs5_2020 |> filter(geography=="tract") #str_detect(name, "B24010"))
+```
+
+
+```{r age-var-list}
+# population by age & sex & race. 
+vars_age = c("B01001A_014", "B01001A_015", "B01001A_016", 
+  "B01001A_029", "B01001A_030", "B01001A_031",
+  "B01001B_014", "B01001B_015", "B01001B_016", 
+  "B01001B_029", "B01001B_030", "B01001B_031",
+  "B01001C_014", "B01001C_015", "B01001C_016", 
+  "B01001C_029", "B01001C_030", "B01001C_031",
+  "B01001D_014", "B01001D_015", "B01001D_016",
+  "B01001D_029", "B01001D_030", "B01001D_031",
+  "B01001E_014", "B01001E_015", "B01001E_016", 
+  "B01001E_029", "B01001E_030", "B01001E_031",
+  "B01001F_014", "B01001F_015", "B01001F_016", 
+  "B01001F_029", "B01001F_030", "B01001F_031",
+  "B01001G_014", "B01001G_015", "B01001G_016", 
+  "B01001G_029", "B01001G_030", "B01001G_031")
+```
+
+```{r 65pl-tract-level, eval=FALSE}
+# collecting tract-level population of 65+
+n = length(us_st_fips)
+
+final.data <- NULL
+for (st in us_st_fips){
+  print(paste0(st , fips_codes[fips_codes$state_code==st, 
+                               "state"][1]))
+  temp.data <- get_acs(geography = "tract", 
+              variables = vars_age, 
+              survey = "acs5",
+              state= st,
+              year = 2020,
+              geometry = TRUE)
+  temp.data <- temp.data |> mutate(race = 
+                                     case_when(str_detect(
+                                       variable, "A")=="TRUE"~"white"))
+  temp.data[is.na(temp.data$race),]$race <- "non-white"
+  new_data <- temp.data |> group_by(GEOID, race) |> summarise(poptot=sum(estimate, na.rm=TRUE),
+                                                             .groups = 'keep')
+ 
+ final.data<-rbind(final.data, new_data)
+ }
+
+# final.data is 65+ total population at the tract-level by broad race category  & saved.
+rm(new_data, temp.data)
+
+saveRDS(object = final.data, file = "pop65plus.RDS")
+```
+
+```{r, eval=FALSE}
+# reading the census population 65+ tract-level data
+final.data <- readRDS("pop65plus.RDS")
+```
+
+## Getting Census tract shapefiles from `tigris`
+```{r getting-tract-shapefiles, eval=FALSE}
+# getting tract-level data.
+# options(tigris_use_cache=TRUE)
+all_tract <- tracts(cb=TRUE,year=2022)
+drop_states<-c("02", "15","78","74","72","69","66","60")
+all_tract <- all_tract |> dplyr::filter(!(STATEFP %in% drop_states))
+```
+
+## Merging the census tract level shapefiles to the NH data
+
+```{r merging-spatial-data, eval=FALSE}
+# us0 <- st_read("../tl_2023_us_state/")
+DF<-na.omit(DF)
+DF$la1<-DF$lat
+DF$lo1<-DF$lon
+DF = st_as_sf(DF, coords = c("lon", "lat"), crs = 4269)
+shape_DF <- st_join(all_tract, DF,  join = st_contains)
+#shape_DF <- na.omit(shape_DF)
+```
+
+
+### health related measures at the tract level.
+
+This is the health data from CDC. Model-based estimates on health outcomes.
+
+```{r place-cdc-data, eval=FALSE}
+places <- read.csv("~/Downloads/places_data_health_data.csv")
+Geolocation<-sf::st_as_sfc(places$Geolocation)
+places_st<-sf::st_sf(places, geometry=Geolocation)
+places_st <- st_drop_geometry(places_st)
+rm(places)
+```
+
+```{r merge-places-data, eval=FALSE}
+shape_DF$GEOID1 <- as.double(shape_DF$GEOID)
+shape_DF_hlth <- left_join(shape_DF, places_st, by = c("GEOID1" = "TractFIPS"))
+#shape_DF_hlth <- na.omit(shape_DF_hlth)
+write_parquet(shape_DF_hlth,"us_nh_hlth_shape.parquet")
+```
+
+
+```{r test-reading-file}
+nh_sf <- read_parquet("us_nh_hlth_shape.parquet")
+geometry<-sf::st_as_sfc(nh_sf$geometry)
+nh_sf<-sf::st_sf(nh_sf, geometry=geometry)
+rm(geometry)
+```
+
+
+
+## 

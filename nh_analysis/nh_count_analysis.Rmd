@@ -1,0 +1,60 @@
+---
+title: "nh_count_analysis"
+output: html_document
+date: "2024-11-29"
+---
+
+
+```{r}
+DF <- DF[!is.null(DF)]
+ggplot(DF) + geom_histogram(aes(x=no_of_tags_peryear), bins = 20)+facet_wrap(~insp_year) +
+  geom_vline(xintercept = mean("no_of_tags_peryear"), color="blue")
+```
+
+
+```{r}
+# can I run regs to see if covid impacted quality??
+DF$covid <- DF$insp_year == 2020
+table(DF$covid)
+
+DF$aftervid <- DF$insp_year > 2020
+# can I fool around with some count models to pred no-of tags (>0)
+# maybe zero truncated processes?
+```
+
+```{r}
+DF %>% group_by(insp_year) %>%
+  summarise(mean(no_of_tags_peryear), quantile(no_of_tags_peryear, c(0.99)), max(no_of_tags_peryear),n()) 
+
+usual_suspects <- DF %>% filter(no_of_tags_peryear>31) %>% select(facility_id, insp_year, state) %>% unique()
+
+```
+
+
+```{r}
+DF %>% group_by(state, insp_year) %>%
+  summarise(mean(no_of_tags_peryear), mean(severe_tags_applied), n()) %>% plot()
+# some state post covid the quality declines..
+```
+
+```{r}
+## plotting - vocational doesn't seem to affect but rn and aid decreases with
+## more no_of_tags per year
+
+DF %>% group_by(no_of_tags_peryear) %>% summarise(mean(aidhrd), mean(rnhrd), mean(vochrd)) %>% plot()
+DF %>% group_by(no_of_tags_peryear) %>% summarise(mean(rnhrd)) %>% plot()
+DF %>% group_by(no_of_tags_peryear) %>% summarise(mean(vochrd)) %>% plot()
+#DF %>% group_by(no_of_tags_peryear) %>% summarise(mean(tothrd)) %>% plot()
+
+#plot(DF$no_of_tags_peryear, mean(DF$aidhrd))
+new_dat <- DF%>%group_by(no_of_tags_peryear, aftervid) %>% summarise(m_rnhrd = mean(
+  rnhrd), m_vochrd=mean(vochrd), .groups = 'keep')
+#new_dat
+
+ggplot(new_dat) + geom_point(aes(no_of_tags_peryear, m_rnhrd, colour=aftervid), alpha=0.6) 
+
+ggplot(new_dat) + geom_point(aes(no_of_tags_peryear, m_vochrd, colour=aftervid), alpha=0.6) 
+#+ geom_point(mapping=new_dat$m_rnhrd)
+```
+Evidently, registered nurse has a relationship with quality up to a certain extent, beyond which this relationship breaks down.
+

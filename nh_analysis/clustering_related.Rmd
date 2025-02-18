@@ -1,0 +1,107 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-11-29"
+---
+```{r, eval=FALSE, echo=FALSE}
+#smlDat<-nh_sf[which(nh_sf$insp_year==2021),]
+#maps::map('usa')
+#points(smlDat$la1~smlDat$lo1,pch=16,col="gray",cex=.2)
+```
+
+```{r, eval=FALSE, echo=FALSE}
+smlDat<-DF[which(DF$insp_year==2021),]
+maps::map('usa')
+points(smlDat$lat~smlDat$lon,pch=16,col="gray",cex=.2)
+```
+
+### Obtain local clustering (G-statistic)
+
+```{r, echo=FALSE}
+# get dat for one year only
+#dat22 <- nh_sf[which(nh_sf$insp_year==2022),]
+dat22 <- DF[which(DF$insp_year==2022),]
+dat22 <- na.omit(dat22) 
+xycoords<-cbind(dat22$la1,dat22$lo1)
+#DF<-DF[!is.na(xycoords)]
+#xycoords<-xycoords[!is.na(xycoords)]
+dim(unique(xycoords))
+#which(duplicated(xycoords))
+xycoords[which(duplicated(xycoords)),]=jitter(xycoords[which(duplicated(xycoords)),])
+#dim(unique(xycoords))
+```
+
+#  
+
+```{r}
+#TODO calculate spatial G for Florida, TX, and California separately.  
+#TODO What is Knn2nb?
+```
+
+What is Local G?
+
+
+```{r, echo=FALSE}
+nb20<-knn2nb(knearneigh(xycoords, k = 20))
+#nb20 <- dnearneigh(xycoords, 0, 20)#neighbors by Great Circle distance in kilometers
+G20 <- localG(dat22$no_of_tags_peryear, nb2listw(nb20, style="W"))
+G20r <- localG(dat22$severe_tag_present, nb2listw(nb20, style="W"))
+
+```
+
+## distance matrix (of nearest neighbors on similar metrics?)
+
+```{r, eval=FALSE, echo=FALSE}
+#knn distance matrix - what is this conversion for?
+data_sf <- st_as_sf(dat22[,c("lat","lon")], coords = c("lon", "lat"),
+                    # Change to your CRS
+                    crs = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+```
+
+```{r, eval=FALSE, echo=FALSE}
+#st_is_longlat(data_sf)
+dist.mat <- st_distance(data_sf) # Great Circle distance since in lat/lon
+
+```
+
+```{r, eval=FALSE, echo=FALSE}
+# get distance in meters for neighbors
+rws <- dim(dist.mat)[1]
+nn.dist=matrix(0,nrow=rws,ncol=20)
+for  (i in 1:rws){
+  nn.dist[i,] <- sort(dist.mat[i,])[2:21]
+}
+#
+```
+
+```{r, eval=FALSE, echo=FALSE}
+smmry=summary(nn.dist/1000)[,c(1,11,20)] # kms
+```
+
+```{r}
+col20=ifelse(G20<qnorm(.025),"blue",
+             ifelse(G20>qnorm(1-.025),"red","grey"))
+maps::map("usa")
+points(dat22$lat~dat22$lon,pch=16,cex=.2,col=col20)
+title("no of tags per inspection")
+```
+
+```{r}
+col20r=ifelse(G20r<qnorm(.025),"blue",
+             ifelse(G20r>qnorm(1-.025),"red","grey"))
+maps::map("usa")
+points(dat22$lat~dat22$lon,pch=16,cex=.2,col=col20r)
+title("severe tags received",)
+```
+
+```{r}
+cor(dat22$no_of_tags_peryear,G20)
+```
+
+```{r, eval=False, echo=FALSE}
+ggsave(
+  'nh_g20_spatial.png',
+  plot = plot1
+)
+```
+
